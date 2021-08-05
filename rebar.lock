@@ -1,0 +1,19 @@
+{"1.2.0",
+[{<<"bert">>,{pkg,<<"bert">>,<<"0.1.0">>},0},
+ {<<"cowlib">>,
+  {git,"https://github.com/ninenines/cowlib",
+       {ref,"e9448e5628c8c1d9083223ff973af8de31a566d1"}},
+  1},
+ {<<"gen_batch_server">>,{pkg,<<"gen_batch_server">>,<<"0.8.6">>},0},
+ {<<"gun">>,
+  {git,"https://github.com/ninenines/gun",
+       {ref,"f9175998687678e227bdd49669e2d83f0648fa57"}},
+  0}]}.
+[
+{pkg_hash,[
+ {<<"bert">>, <<"A87D6693515070A9B287C1043CB7E5B2406BE0357685022764BFBD2609703555">>},
+ {<<"gen_batch_server">>, <<"712E589A644AFB1DF4EE7B3A3E6182280086631ED5C3283394A27694FE16C0A9">>}]},
+{pkg_hash_ext,[
+ {<<"bert">>, <<"2A561521EC3529B248658A3E2D3D4BFE6729B0AB8291C701BF15EF413EDA1506">>},
+ {<<"gen_batch_server">>, <<"B78679349168F27D7047F3283C9D766760B234D98C762ACA9A1907F4EE3FD406">>}]}
+].
