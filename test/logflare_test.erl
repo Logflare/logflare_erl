@@ -60,24 +60,45 @@ internal_clock_timestamp_set_test() ->
 new_gun() ->
     #gun{ rcvr = self() }.
 
+%% Error mock client
+-record(error_gun, {rcvr}).
+new_error_gun() ->
+    #error_gun{ rcvr = self() }.
+
+
 %% This one can never open a connection
 -record(unreachable_gun, {dummy}).
 
 
-open(#gun{} = G, _, _, _) ->
-    {ok, G};
-
 open(#unreachable_gun{} = G, _, _, _) ->
+    {ok, G};
+open(G, _, _, _) ->
     {ok, G}.
 
-await_up(#gun{} = G, _) ->
-    {ok, G};
-
 await_up(#unreachable_gun{}, _) ->
-    {error, cant_reach}.
+    {error, cant_reach};
+await_up(G, _) ->
+    {ok, G}.
 
-post(#gun{ rcvr = R}, _Conn, Path, Headers, Body) ->
-    R ! {gun, post, Path, Headers, Body}.
+
+post(#gun{ rcvr = R}, Conn, Path, Headers, Body) ->
+    Self = self(),
+    Stream = make_ref(),
+    R ! {gun, post, Path, Headers, Body},
+    Self ! {gun_response, Conn, Stream, nofin, 200, []},
+    Self ! {gun_data, Conn, Stream, nofin, <<"\"succ">>},
+    Self ! {gun_data, Conn, Stream, fin, <<"ess\"">>},
+    Stream;
+
+post(#error_gun{ rcvr = R}, Conn, Path, Headers, Body) ->
+    Self = self(),
+    Stream = make_ref(),
+    R ! {gun, post, Path, Headers, Body},
+    Self ! {gun_response, Conn, Stream, nofin, 404, []},
+    Self ! {gun_data, Conn, Stream, nofin, <<"\"not_">>},
+    Self ! {gun_data, Conn, Stream, fin, <<"found\"">>},
+    Stream.
+
 
 %%% Actual tests
 
@@ -94,7 +115,7 @@ crash_if_cant_open_test() ->
             ?assertEqual({error, cant_reach}, M)
     end.
 
-post_request_test() ->
+async_test() ->
     Gun = new_gun(),
     {ok, L} = logflare:start_link([
                                    {source_id, "123"},
@@ -113,3 +134,67 @@ post_request_test() ->
                           }, Decoded)
     end.
 
+async_order_test() ->
+    Gun = new_gun(),
+    {ok, L} = logflare:start_link([
+                                   {source_id, "123"},
+                                   {api_key, "000"},
+                                   {gun, {?MODULE, Gun}},
+                                   {min_batch_size, 2},
+                                   {low_batch_size_timeout, 10000}
+                                  ]),
+    Log1 = #{test => 1},
+    Log2 = #{test => 2},
+    logflare:async(L, Log1),
+    logflare:async(L, Log2),
+    receive
+        {gun, post, <<"/logs/erlang/logger">>, Headers, Body} ->
+            ?assertEqual(<<"000">>,
+                         maps:get(<<"x-api-key">>, maps:from_list(Headers))),
+            Decoded = bert:decode(Body),
+            ?assertEqual(#{<<"batch">> => [Log1, Log2],
+                           <<"source">> => <<"123">>
+                          }, Decoded)
+    end.
+
+async_batch_order_test() ->
+    Gun = new_gun(),
+    {ok, L} = logflare:start_link([
+                                   {source_id, "123"},
+                                   {api_key, "000"},
+                                   {gun, {?MODULE, Gun}},
+                                   {min_batch_size, 2},
+                                   {low_batch_size_timeout, 10000}
+                                  ]),
+    Log1 = #{test => 1},
+    Log2 = #{test => 2},
+    logflare:async_batch(L, [Log1, Log2]),
+    receive
+        {gun, post, <<"/logs/erlang/logger">>, Headers, Body} ->
+            ?assertEqual(<<"000">>,
+                         maps:get(<<"x-api-key">>, maps:from_list(Headers))),
+            Decoded = bert:decode(Body),
+            ?assertEqual(#{<<"batch">> => [Log1, Log2],
+                           <<"source">> => <<"123">>
+                          }, Decoded)
+    end.
+
+sync_test() ->
+    Gun = new_gun(),
+    {ok, L} = logflare:start_link([
+                                   {source_id, "123"},
+                                   {api_key, "000"},
+                                   {gun, {?MODULE, Gun}}
+                                  ]),
+    Log = #{test => passed},
+    ?assertEqual({ok, <<"success">>}, logflare:sync(L, Log)).
+
+sync_error_test() ->
+    Gun = new_error_gun(),
+    {ok, L} = logflare:start_link([
+                                   {source_id, "123"},
+                                   {api_key, "000"},
+                                   {gun, {?MODULE, Gun}}
+                                  ]),
+    Log = #{test => passed},
+    ?assertEqual({error, {404, <<"not_found">>}}, logflare:sync(L, Log)).

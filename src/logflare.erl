@@ -98,11 +98,7 @@ prepare_gb_opts(Opts) ->
     MinBatchSize = proplists:get_value(min_batch_size, Opts,
                                        ?MIN_BATCH_SIZE),
     [{max_batch_size, MaxBatchSize},
-     {min_batch_size, MinBatchSize},
-     %% This is important for performance as we'll fold
-     %% operations in the batch and build actions & API
-     %% execution in reverse order.
-     {reversed_batch, true}].
+     {min_batch_size, MinBatchSize}].
 
 %% @doc Sends a log message and immediately returns
 %%
@@ -138,7 +134,9 @@ sync(ServerRef, Log, Timeout) ->
                 conn :: undefined | pid(),
                 post_in_flight = none :: gun:stream_ref() | none,
                 queue = [] :: [map()],
-                queued_actions = [] :: [gen_batch_server:action()],
+                queued_sync_requests = [] :: [gen_batch_server:from()],
+                response_body = [] :: iolist(),
+                response_status = undefined :: pos_integer() | undefined,
                 timeout_from = undefined :: undefined | non_neg_integer()
                }).
 
@@ -184,22 +182,72 @@ port(<<"http">>) ->
 
 handle_batch([], State) ->
     {ok, State};
-handle_batch(Ops, #state { conn = Conn, post_in_flight = Stream, 
+handle_batch(Ops, #state { conn = Conn, post_in_flight = Stream,
                            config = #config { clock = Clock } } = State) ->
     % From every eligible operation, construct an action (if necessary)
     % and add a log to the batch
     {Actions, Batch, State1} = lists:foldl(fun
                                                ({cast, {log, Log}}, {Actions, Batch, AState}) -> % async
                                                    {Actions, [prepare_log(Log)|Batch], AState};
-                                               ({call, From, {log, Log}}, {Actions, Batch, AState}) -> % sync
-                                                   {[{reply, From, ok}|Actions], [prepare_log(Log)|Batch], AState};
-                                               ({info, {gun_response, Conn1, Stream1, _, _Status, _Headers}}, {Actions, Batch, AState}) 
-                                                 when Conn1 == Conn andalso Stream1 == Stream -> % post is no longer in flight
-                                                   {Actions, Batch, AState#state { post_in_flight = none }};
-                                               (_, Acc) ->
+                                               ({call, From, {log, Log}},
+                                                {Actions, Batch,
+                                                 #state { queued_sync_requests = Queue} = AState}) -> % sync
+                                                   {Actions, [prepare_log(Log)|Batch],
+                                                    AState#state {
+                                                      queued_sync_requests = [From|Queue]
+                                                     }};
+                                               % Response body
+                                               ({info, {gun_data, Conn1, Stream1, Fin, Data}},
+                                                {Actions, Batch, #state { response_status = Status,
+                                                                          queued_sync_requests = Queue,
+                                                                          response_body = Body } = AState})
+                                                 when Conn1 == Conn andalso Stream1 == Stream ->
+                                                   ResponseBody = [Data | Body],
+                                                   case Fin of
+                                                       fin ->
+                                                           JSON = jsone:decode(iolist_to_binary(lists:reverse(ResponseBody))),
+                                                           Response = case Status of
+                                                                          200 ->
+                                                                              {ok, JSON};
+                                                                          _ ->
+                                                                              {error, {Status, JSON}}
+                                                                      end,
+                                                           NewActions = lists:map(fun (From) ->
+                                                                                          {reply, From, Response}
+                                                                                  end, Queue),
+                                                           {Actions ++ NewActions, Batch, AState#state {
+                                                                                            post_in_flight = none,
+                                                                                            queued_sync_requests = [],
+                                                                                            response_status = undefined,
+                                                                                            response_body = [] }};
+                                                       nofin ->
+                                                           {Actions, Batch, AState#state { response_body = ResponseBody}}
+                                                   end;
+                                               %% Empty response
+                                               ({info, {gun_response, Conn1, Stream1, fin, Status, _Headers}}, 
+                                                {Actions, Batch, #state { queued_sync_requests = Queue } = AState})
+                                                 when Conn1 == Conn andalso Stream1 == Stream ->
+                                                   Response = case Status of
+                                                                  200 -> ok;
+                                                                  _ -> {error, Status}
+                                                              end,
+                                                   NewActions = lists:map(fun (From) ->
+                                                                                  {reply, From, Response}
+                                                                          end, Queue),
+                                                   {Actions ++ NewActions, Batch, AState#state {
+                                                                                    post_in_flight = none,
+                                                                                    queued_sync_requests = [],
+                                                                                    response_status = undefined,
+                                                                                    response_body = [] }};
+                                               %% Response with body
+                                               ({info, {gun_response, Conn1, Stream1, nofin, Status, _Headers}}, {Actions, Batch, AState})
+                                                 when Conn1 == Conn andalso Stream1 == Stream ->
+                                                   {Actions, Batch, AState#state { response_status = Status }};
+                                               (_M, Acc) ->
                                                    Acc
                                   end, {[], [], State}, Ops),
-    process_actions_and_batch(Actions, Batch, State1, timestamp_to_ms(apply_dependency(Clock, timestamp, []))).
+    process_actions_and_batch(Actions, lists:reverse(Batch), State1,
+                              timestamp_to_ms(apply_dependency(Clock, timestamp, []))).
 
 -spec process_actions_and_batch([gen_batch_server:action()], [term()], #state{}, non_neg_integer()) -> 
           {ok, #state{}} |
@@ -216,7 +264,6 @@ process_actions_and_batch(Actions, [], #state { queue = [] } = State, _Time) ->
 %% AND that tiimeout hasn't expired
 process_actions_and_batch(Actions, Batch, #state {
                                              queue = Queue,
-                                             queued_actions = QueuedActions,
                                              timeout_from = TimeoutFrom,
                                              config = #config { min_batch_size = MinBatchSize,
                                                                 low_batch_size_timeout = Timeout }} = State, Time)
@@ -224,11 +271,11 @@ process_actions_and_batch(Actions, Batch, #state {
        andalso (TimeoutFrom == undefined orelse Time - TimeoutFrom < Timeout)
        ->
     erlang:send_after(Timeout - (Time - adjust_timeout_from(TimeoutFrom, Time)), self(), ping),
-    {ok, State#state { queue = Queue ++ Batch, queued_actions = QueuedActions ++ Actions, timeout_from = adjust_timeout_from(TimeoutFrom, Time) }};
+    {ok, Actions, State#state { queue = Queue ++ Batch, timeout_from = adjust_timeout_from(TimeoutFrom, Time) }};
 %% Otherwise, we're ready to send the batch and actions
-process_actions_and_batch(Actions, Batch, #state { queued_actions = QueuedActions } = State, _Time) ->
+process_actions_and_batch(Actions, Batch, State, _Time) ->
     State1 = send_batch(Batch, State),
-    {ok, QueuedActions ++ Actions, State1#state { queued_actions = [] }}.
+    {ok, Actions, State1}.
 
 -spec adjust_timeout_from(undefined | non_neg_integer(), non_neg_integer()) -> non_neg_integer().
 
