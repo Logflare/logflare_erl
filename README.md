@@ -1,4 +1,4 @@
-# Logflare API client for Erlang
+# Logflare API Client for Erlang
 
 Send any kind of timestamped event data to Logflare for ingest. This library is separated from the `logflare_lager_backend` and the `logfalre_logger_handler` so you can easily send Logfalre data without pushing it through a logging framework if you don't need the context those frameworks offer and don't want the added overhead. All Logflare Erlang clients depend on this client to shuffle data to Logflare.
 
@@ -20,8 +20,8 @@ Setup your client.
 -export([config/0, conn/1, post/2, post_async/2, timestamp_to_ms/1]).
 
 config() ->
-    [{api_key, "ecKGEvgLuTVB"},
-     {source_id, "53e8a0ab-3d78-4446-a3f8-eb8fbe3bbff2"},
+    [{api_key, "YOUR_LOGFLARE_API_KEY"},
+     {source_id, "YOUR_SOURCE_UUID"},
      {base_url, <<"https://api.logflare.app">>},
      {path, <<"/logs/erlang/logger">>}].
 
@@ -75,15 +75,15 @@ You'll want to add this to your supervision tree when your app boots so you alwa
 
 ## Batching
 
-This client handles batching transparently. Simply `logflare:async(Pid, Log).` and it'll batch log events over to Logflare if needed when batching is needed. Batching is handled by the `gen_batch_server` library.
+This client handles batching transparently. Simply `logflare:async(Pid, Log).` and it'll batch log events over to Logflare when batching is needed. Batching is handled by the `gen_batch_server` library.
 
 ## Encoding
 
 We encode the data in the Binary Erlang Term Format and Logflare is written in Elixir, so all native Erlang types are supported. Logflare will handle transoforming those types into something the storage backend can handle.
 
-## Log Event Structure
+## Event Structure
 
-By default the `/logs/erlang` endpoint requires two top level keys: `message` and `metadata`. The `message` is what you'll see in your log stream. The `metadata` is attached to each log message and can be any object, nested with any keys however deep. Logflare typechecks the metadata and migrates the backend based on any new fields found. 
+By default the `/logs/erlang/logger` endpoint requires two top level keys: `message` and `metadata`. The `message` is what you'll see in your log stream. The `metadata` is attached to each log message and can be any object, nested with any keys however deep. Logflare typechecks the metadata and migrates the backend based on any new fields found. 
 
 Optionally you can include the `timestamp` field and Logflare will use your `timestamp` as the official timestamp of the log event. Otherwise events will be timestamped as Logflare ingests them. The timestamp can be an `ISO8601` formatted string or a Unix Epoch integer. 
 
