@@ -210,6 +210,10 @@ handle_batch(Ops, #state { conn = Conn, post_in_flight = Stream,
                                                                           200 ->
                                                                               {ok, JSON};
                                                                           _ ->
+                                                                              if Queue == [] ->
+                                                                                      logger:error("POST request to Logflare failed (~d) ~p", [Status, JSON]);
+                                                                                      true -> ok
+                                                                              end,
                                                                               {error, {Status, JSON}}
                                                                       end,
                                                            NewActions = lists:map(fun (From) ->
@@ -229,7 +233,12 @@ handle_batch(Ops, #state { conn = Conn, post_in_flight = Stream,
                                                  when Conn1 == Conn andalso Stream1 == Stream ->
                                                    Response = case Status of
                                                                   200 -> ok;
-                                                                  _ -> {error, Status}
+                                                                  _ ->
+                                                                      if Queue == [] ->
+                                                                              logger:error("POST request to Logflare failed (~d)", [Status]);
+                                                                         true -> ok
+                                                                      end,
+                                                                      {error, Status}
                                                               end,
                                                    NewActions = lists:map(fun (From) ->
                                                                                   {reply, From, Response}

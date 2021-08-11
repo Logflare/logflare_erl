@@ -3,6 +3,11 @@
 -compile(export_all).
 -include_lib("eunit/include/eunit.hrl").
 
+%% Logger support
+
+log(Msg, #{report_to := ReportTo} = Meta) ->
+    ReportTo ! {log, Msg, Meta}.
+
 -record(clock, {
                 ts :: atomics:atomics_ref()
                }).
@@ -198,3 +203,19 @@ sync_error_test() ->
                                   ]),
     Log = #{test => passed},
     ?assertEqual({error, {404, <<"not_found">>}}, logflare:sync(L, Log)).
+
+async_error_logging_test() ->
+    Gun = new_error_gun(),
+    {ok, L} = logflare:start_link([
+                                   {source_id, "123"},
+                                   {api_key, "000"},
+                                   {gun, {?MODULE, Gun}}
+                                  ]),
+    Log = #{test => passed},
+    logger:add_handler(?MODULE, ?MODULE, #{report_to => self()}),
+    logflare:async(L, Log),
+    receive
+        {log, #{msg := {"POST request to Logflare failed (~d) ~p", [404, <<"not_found">>]}},_} ->
+            ok
+    end,
+    logger:remove_handler(?MODULE).
