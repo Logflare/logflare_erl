@@ -8,7 +8,7 @@ Add `logflare_erl` to your Rebar3 dependancies.
 
 ```
 {deps,[
-  {logflare_erl, "0.1.0"}}
+  {logflare_erl, "0.2.0"}}
 ]}.
 ```
 
