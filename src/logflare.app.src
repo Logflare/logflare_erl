@@ -8,6 +8,7 @@
   {modules, [logflare]},
   {pkg_name, "logflare_erl"},
   {licenses, ["Apache 2.0"]},
+  {doc, "doc"},
   {links,
    [{"GitHub", "https://github.com/logflare/logflare_erl"},
     {"Logflare", "https://logflare.app"}]},
