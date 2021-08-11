@@ -21,3 +21,4 @@ doc/*.html
 doc/*.png
 doc/edoc-info
 doc/*.css
+.DS_Store
