@@ -1,18 +1,14 @@
-{application, logflare,
- [{description, "Logflare API client"},
+{application,
+ logflare,
+ [{description, "Logflare Erlang API Client"},
   {vsn, "0.1.0"},
   {registered, []},
-  {applications,
-   [kernel,
-    stdlib,
-    gen_batch_server,
-    bert,
-    gun
-   ]},
-  {env,[]},
+  {applications, [kernel, stdlib, gen_batch_server, bert, gun]},
+  {env, []},
   {modules, [logflare]},
-
+  {pkg_name, "logflare_erl"},
   {licenses, ["Apache 2.0"]},
-  {links, []},
-  {pkg_name, "logflare_erl"}
- ]}.
+  {links,
+   [{"GitHub", "https://github.com/logflare/logflare_erl"},
+    {"Logflare", "https://logflare.app"}]},
+  {pkg_name, "logflare_erl"}]}.
