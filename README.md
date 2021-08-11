@@ -91,7 +91,7 @@ Optionally you can include the `timestamp` field and Logflare will use your `tim
 
 The default backend of Logflare is BigQuery. BigQuery is typed. The data type of a field is defined by the first log event Logflare sees. Sometimes people will send over an integer first, and then it turns into a float. In this case the field would be defined as an integer and subsequent events will be rejected, appearing the `rejected` queue in your Logflare dashboard. You should also see a message in stdout if an event is rejected for any reason.
 
-Logflare supports and encourages wide events, but you should be concious of what your logging. Depending on the backend, we may not be able to easily delete columns. If you blindly send a map, fields in that map will be added which you may not need and spam your schema. If you need to log an unknown structure, first stringify if and include it in the metadata as a string first, then if there is data in there you'd like on an ongoing basis, pull that out into it's own field. 
+Logflare supports and encourages wide events, but you should be concious of what your logging. Depending on the backend, we may not be able to easily delete columns. If you blindly send a map, fields in that map will be added which you may not need and spam your schema. If you need to log an unknown structure, first stringify it and include it in the metadata as a string, then if there is data in there you'd like on an ongoing basis, pull that out into it's own field. 
 
 ## Build
 
