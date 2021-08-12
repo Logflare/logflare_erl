@@ -6,7 +6,7 @@ Send any kind of timestamped event data to Logflare for ingest. This library is 
 
 Add `logflare_erl` to your Rebar3 dependancies.
 
-```
+```erlang
 {deps,[
   {logflare_erl, "0.2.0"}}
 ]}.
@@ -14,7 +14,7 @@ Add `logflare_erl` to your Rebar3 dependancies.
 
 Setup your client.
 
-```
+```erlang
 -module(client).
 
 -export([config/0, conn/1, post/2, post_async/2, timestamp_to_ms/1]).
